@@ -1,0 +1,204 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodeBuildProject
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: reverse
+    Description: Name of the project
+    AllowedPattern: "^[a-z0-9\\-]*$"
+  ComponentName:
+    Type: String
+    Description: Name of the specific component
+    AllowedPattern: "^[a-z0-9\\-]*$"
+  RepositoryURL:
+    Type: String
+    Description: Repository URL for component
+  VpcId:
+    Type: String
+    Default: ""
+  SubnetIds:
+    Type: String
+    Default: ""
+  S3Bucket:
+    Type: String
+    Default: ""
+  TypeContainer:
+    Type: String
+    Default: LINUX_CONTAINER
+  ImageCodeBuild:
+    Type: String
+    Default: aws/codebuild/standard:4.0
+  Environment:
+    Type: String
+    Default: production
+
+Conditions:
+  NeedNetworkCfg: !And
+    - !Not [!Equals [!Ref VpcId, ""]]
+    - !Not [!Equals [!Ref SubnetIds, ""]]
+  HasArtifacts: !Not [!Equals [!Ref S3Bucket, ""]]
+
+Resources:
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: !If [HasArtifacts, S3, NO_ARTIFACTS]
+        EncryptionDisabled: !If [HasArtifacts, true, !Ref AWS::NoValue]
+        Location: !If [HasArtifacts, !Ref S3Bucket, !Ref AWS::NoValue]
+        Name: !If [HasArtifacts, "/", !Ref AWS::NoValue]
+        NamespaceType: !If [HasArtifacts, NONE, !Ref AWS::NoValue]
+        Packaging: !If [HasArtifacts, NONE, !Ref AWS::NoValue]
+      BadgeEnabled: true
+      Cache:
+        Type: NO_CACHE #evaluate (local or S3 available)
+      ConcurrentBuildLimit: 1
+      #Description: !Sub '${ProjectName}-${ComponentName}'
+      #EncryptionKey: #evaluate for artifacts
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL #https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-codebuild-project-environment.html#cfn-codebuild-project-environment-computetype
+        EnvironmentVariables:
+          - Name: "PROJECT_NAME"
+            Value: !Ref ProjectName
+          - Name: "SERVICE_NAME"
+            Value: !Ref ComponentName
+          - Name: "SERVICE_ENV"
+            Value: !Ref Environment
+          - Name: "AWS_ACCOUNT_ID"
+            Value: !Ref AWS::AccountId
+        Image: !Ref ImageCodeBuild #UBUNTU 20.04 #https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-available.html
+        #ImagePullCredentialsType: SERVICE_ROLE #CODEBUILD | SERVICE_ROLE
+        PrivilegedMode: true
+        # RegistryCredendial: #https://docs.aws.amazon.com/codebuild/latest/userguide/sample-private-registry.html
+        #   Credential:
+        #   CredentialProvider: SECRETS_MANAGER
+        Type: !Ref TypeContainer 
+      #FileSystemLocations
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref LogsLogGroup
+      Name: !Sub "${ProjectName}-${ComponentName}"
+      QueuedTimeoutInMinutes: 480
+      #ResourceAccessRole - The ARN of the IAM role that enables CodeBuild to access the CloudWatch Logs and Amazon S3 artifacts for the project's builds.
+      ServiceRole: !Ref CodeBuildRole #The ARN of the IAM role that enables AWS CodeBuild to interact with dependent AWS services on behalf of the AWS account.
+      Source:
+        Auth:
+          Type: OAUTH
+        Location: !Ref RepositoryURL
+        Type: GITHUB
+        GitCloneDepth: 1
+      Triggers:
+        Webhook: false
+      VpcConfig:
+        Subnets: !If
+          - NeedNetworkCfg
+          - !Split [",", !Ref SubnetIds]
+          - !Ref AWS::NoValue
+        SecurityGroupIds: !If
+          - NeedNetworkCfg
+          - [!Ref CodeBuildSG]
+          - !Ref AWS::NoValue
+        VpcId: !If
+          - NeedNetworkCfg
+          - !Ref VpcId
+          - !Ref AWS::NoValue
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-${ComponentName}-code-build-svc-role"
+      Path: /
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Sub "${ProjectName}-${ComponentName}-code-build-svc-role"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Resource: "*"
+                Action:
+                  - "logs:*"
+                  - "codebuild:*"
+                  - "s3:*"
+                  - "iam:*"
+                  - "cloudformation:*"
+                  - "lambda:*"
+                  - "cloudwatch:*"
+                  - "apigateway:*"
+                  - "ecs:*"
+                  - "ec2:*"
+                  - "elasticloadbalancing:*"
+                  - "route53:*"
+                  - "ecr:*"
+                  - "rds:*"
+                  - "rds-db:*"
+                  - "secretsmanager:*"
+                  - "ssm:*"
+                  - "kms:*"
+                  - "cloudfront:*"
+                  - "wafv2:*"
+                  - "application-autoscaling:*"
+                  - "servicediscovery:*"
+
+  GithubActionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-${ComponentName}-${Environment}-github-actions"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRoleWithWebIdentity
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Condition:
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub repo:${RepositoryURL}:*
+      Policies:
+        - PolicyName: GithubActions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                Resource:
+                  - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectName}-${Environment}-${ComponentName}"
+              - Effect: Allow
+                Action:
+                  - logs:GetLogEvents
+                Resource: !Sub ${LogsLogGroup.Arn}:*   
+
+  CodeBuildSG:
+    Type: AWS::EC2::SecurityGroup
+    Condition: NeedNetworkCfg
+    Properties:
+      GroupDescription: !Sub "${ProjectName}-${ComponentName}. Security group for CodeBuild." # Required
+      GroupName: !Sub "${ProjectName}-${ComponentName}-code-build-sg"
+      # SecurityGroupEgress:
+      #   SecurityGroupEgress
+      # SecurityGroupIngress:
+      #   SecurityGroupIngress
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${ComponentName}-code-build-sg"
+      VpcId: !Ref VpcId
+
+  LogsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/codebuild/${ProjectName}-${Environment}-${ComponentName}"
+      RetentionInDays: 90
+
+Outputs:
+  CodeBuildSG:
+    Value: !If [NeedNetworkCfg, !Ref CodeBuildSG, ""]

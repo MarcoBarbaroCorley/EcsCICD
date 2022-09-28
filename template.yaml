@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Description: Global infrastructure
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: reverse
+    AllowedPattern: "^[a-z0-9\\-]*$"
+  Environment:
+    Type: String
+    Description: Environment name
+    Default: prod
+    AllowedValues:
+      - stag
+      - prod
+
+
+Resources:
+  
+  
+
+  TestProva:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: ./component.yaml
+      Parameters:
+        ProjectName: !Ref ProjectName
+        ComponentName: test
+        RepositoryURL: "INSERIRE URL" #TODO: Inserire correttamente l'url
+        Branches: !Ref Environment  #TODO: In futuro qui basterà mappare gli ambienti per prendere il corretto branch
+        VpcId: !GetAtt Networking.Outputs.VPC
+        SubnetIds: !GetAtt Networking.Outputs.PrivateSubnets
+        # DBSGId: !Ref AuroraSG
+        TypeContainer: LINUX_CONTAINER

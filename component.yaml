@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+Description: "Component Base Configuration"
+
+# Questo template genera ciò che serve ai singoli componenti del progetto
+
+Parameters:
+  ProjectName:
+    Type: String
+    AllowedPattern: "^[a-z0-9\\-]*$"
+  ComponentName:
+    Type: String
+    AllowedPattern: "^[a-z0-9\\-]*$"
+  RepositoryURL:
+    Type: String
+  Branches:
+    Type: String
+  VpcId:
+    Type: String
+    Default: ""
+  SubnetIds:
+    Type: String #Comma delimited
+    Default: ""
+  AuroraSGId:
+    Type: String
+    Default: ""
+  # CreateECRRepo:
+  #   Type: String
+  #   Default: "true"
+  TypeContainer:
+    Type: String
+  ImageCodeBuild:
+    Type: String
+    Default: aws/codebuild/standard:4.0
+
+
+Conditions:
+  CodeBuildNeedDB: !Not [!Equals [!Ref AuroraSGId, ""]]
+  # CreateECRRepo: !Equals [!Ref CreateECRRepo, "true"] #TODO verify
+
+Resources:
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    #Condition: CreateECRRepo
+    Properties:
+      RepositoryName: !Sub "${ProjectName}-${ComponentName}-repo"
+      Tags:
+        - Key: prjName
+          Value: !Ref ProjectName
+        - Key: prjCp
+          Value: !Ref ComponentName
+
+  CodeBuildProject:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: ./code-build-project.yaml
+      Parameters:
+        ProjectName: !Ref ProjectName
+        ComponentName: !Ref ComponentName
+        RepositoryURL: !Ref RepositoryURL
+        Branches: !Ref Branches
+        VpcId: !Ref VpcId
+        SubnetIds: !Ref SubnetIds
+        TypeContainer: !Ref TypeContainer
+        ImageCodeBuild: !Ref ImageCodeBuild
+
+  AuroraIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: CodeBuildNeedDB
+    Properties:
+      IpProtocol: "tcp"
+      FromPort: 3306
+      ToPort: 3306
+      Description: !Sub "${ProjectName}-${ComponentName}-codebuild"
+      GroupId: !Ref AuroraSGId
+      SourceSecurityGroupId: !GetAtt CodeBuildProject.Outputs.CodeBuildSG
+
+Outputs:
+  RepositoryUri:
+    Value: !GetAtt ECRRepository.RepositoryUri
+    # Value: !If
+    #   - CreateECRRepo
+    #   - !GetAtt ECRRepository.RepositoryUri
+    #   - ""

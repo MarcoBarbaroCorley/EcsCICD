@@ -1,0 +1,41 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    MY_ENV: "MY ENV"
+
+phases:
+  install:
+    on-failure: ABORT
+    commands:
+      - echo "My first codebuild install command ${MY_ENV}"
+      # https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install-linux.html#serverless-sam-cli-install-linux-sam-cli
+      - wget --quiet https://github.com/aws/aws-sam-cli/releases/download/v1.50.0/aws-sam-cli-linux-x86_64.zip
+      - unzip -qq aws-sam-cli-linux-x86_64.zip -d sam-installation
+      - ./sam-installation/install
+      - sam --version
+      - env
+  pre_build:
+    on-failure: ABORT
+    commands:
+      - echo "[aws version]"
+      - aws --version
+      - export CURRENT_BRANCH=`printf $CODEBUILD_WEBHOOK_TRIGGER | cut -d '/' -f2 `
+      - export SAM_CLI_TELEMETRY=0
+      - echo "CURRENT BRANCH ${CURRENT_BRANCH}"
+  build:
+    on-failure: ABORT
+    commands:
+      - echo "My first codebuild build command"
+      - echo "CURRENT BRANCH ${CURRENT_BRANCH}"
+      - cd infrastructure
+      - sam build --config-env $CURRENT_BRANCH
+      - ls -la .aws-sam*
+      - sam deploy --config-env $CURRENT_BRANCH --no-confirm-changeset
+  post_build:
+    on-failure: ABORT
+    commands:
+      - echo "My first codebuild post_build command"
+    finally:
+      - echo "My first codebuild finally command"
