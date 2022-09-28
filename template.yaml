@@ -31,8 +31,8 @@ Resources:
       Parameters:
         ProjectName: !Ref ProjectName
         ComponentName: test
-        RepositoryURL: "INSERIRE URL" #TODO: Inserire correttamente l'url
-        Branches: !Ref Environment  #TODO: In futuro qui basterà mappare gli ambienti per prendere il corretto branch
+        RepositoryURL: https://github.com/MarcoBarbaroCorley/ProgrammaTest.git #TODO: Inserire correttamente l'url
+        Branches: main  #TODO: In futuro qui basterà mappare gli ambienti per prendere il corretto branch
         VpcId: !Ref VpcId
         SubnetIds: !Ref SubnetIds
         # DBSGId: !Ref AuroraSG

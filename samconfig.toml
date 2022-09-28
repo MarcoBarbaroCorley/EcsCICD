@@ -6,7 +6,6 @@ stack_name = "bip-infrastructure"
 s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1kz145fcq4wmb"
 s3_prefix = "bip-infrastructure"
 region = "eu-central-1"
-profile = "lab09"
 capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM"
 parameter_overrides = "ProjectName=\"5t\" Environment=\"prod\" VpcId=\"vpc-0fc06a77dcb5b5ddf\" SubnetIds=\"subnet-0a386eb78cee717d5\""
 image_repositories = []
