@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Global infrastructure
+Parameters:
+  ProjectName:
+    Type: String
+    Default: reverse
+    AllowedPattern: ^[a-z0-9\-]*$
+  Environment:
+    Type: String
+    Description: Environment name
+    Default: prod
+    AllowedValues:
+    - stag
+    - prod
+Resources:
+  TestProva:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: TestProva/template.yaml
+      Parameters:
+        ProjectName:
+          Ref: ProjectName
+        ComponentName: test
+        RepositoryURL: INSERIRE URL
+        Branches:
+          Ref: Environment
+        VpcId:
+          Fn::GetAtt:
+          - Networking
+          - Outputs.VPC
+        SubnetIds:
+          Fn::GetAtt:
+          - Networking
+          - Outputs.PrivateSubnets
+        TypeContainer: LINUX_CONTAINER
+    Metadata:
+      SamResourceId: TestProva

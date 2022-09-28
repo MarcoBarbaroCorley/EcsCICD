@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: Component Base Configuration
+Parameters:
+  ProjectName:
+    Type: String
+    AllowedPattern: ^[a-z0-9\-]*$
+  ComponentName:
+    Type: String
+    AllowedPattern: ^[a-z0-9\-]*$
+  RepositoryURL:
+    Type: String
+  Branches:
+    Type: String
+  VpcId:
+    Type: String
+    Default: ''
+  SubnetIds:
+    Type: String
+    Default: ''
+  AuroraSGId:
+    Type: String
+    Default: ''
+  TypeContainer:
+    Type: String
+  ImageCodeBuild:
+    Type: String
+    Default: aws/codebuild/standard:4.0
+Conditions:
+  CodeBuildNeedDB:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: AuroraSGId
+      - ''
+Resources:
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName:
+        Fn::Sub: ${ProjectName}-${ComponentName}-repo
+      Tags:
+      - Key: prjName
+        Value:
+          Ref: ProjectName
+      - Key: prjCp
+        Value:
+          Ref: ComponentName
+  CodeBuildProject:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: CodeBuildProject/template.yaml
+      Parameters:
+        ProjectName:
+          Ref: ProjectName
+        ComponentName:
+          Ref: ComponentName
+        RepositoryURL:
+          Ref: RepositoryURL
+        Branches:
+          Ref: Branches
+        VpcId:
+          Ref: VpcId
+        SubnetIds:
+          Ref: SubnetIds
+        TypeContainer:
+          Ref: TypeContainer
+        ImageCodeBuild:
+          Ref: ImageCodeBuild
+    Metadata:
+      SamResourceId: CodeBuildProject
+  AuroraIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: CodeBuildNeedDB
+    Properties:
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      Description:
+        Fn::Sub: ${ProjectName}-${ComponentName}-codebuild
+      GroupId:
+        Ref: AuroraSGId
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+        - CodeBuildProject
+        - Outputs.CodeBuildSG
+Outputs:
+  RepositoryUri:
+    Value:
+      Fn::GetAtt:
+      - ECRRepository
+      - RepositoryUri

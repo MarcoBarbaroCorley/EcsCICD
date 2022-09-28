@@ -29,10 +29,9 @@ phases:
     commands:
       - echo "My first codebuild build command"
       - echo "CURRENT BRANCH ${CURRENT_BRANCH}"
-      - cd infrastructure
-      - sam build --config-env $CURRENT_BRANCH
+      - sam build --config-env prod
       - ls -la .aws-sam*
-      - sam deploy --config-env $CURRENT_BRANCH --no-confirm-changeset
+      - sam deploy --config-env prod --no-confirm-changeset
   post_build:
     on-failure: ABORT
     commands:

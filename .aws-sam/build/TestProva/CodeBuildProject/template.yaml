@@ -1,0 +1,249 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CodeBuildProject
+Parameters:
+  ProjectName:
+    Type: String
+    Default: reverse
+    Description: Name of the project
+    AllowedPattern: ^[a-z0-9\-]*$
+  ComponentName:
+    Type: String
+    Description: Name of the specific component
+    AllowedPattern: ^[a-z0-9\-]*$
+  RepositoryURL:
+    Type: String
+    Description: Repository URL for component
+  VpcId:
+    Type: String
+    Default: ''
+  SubnetIds:
+    Type: String
+    Default: ''
+  S3Bucket:
+    Type: String
+    Default: ''
+  TypeContainer:
+    Type: String
+    Default: LINUX_CONTAINER
+  ImageCodeBuild:
+    Type: String
+    Default: aws/codebuild/standard:4.0
+  Environment:
+    Type: String
+    Default: production
+Conditions:
+  NeedNetworkCfg:
+    Fn::And:
+    - Fn::Not:
+      - Fn::Equals:
+        - Ref: VpcId
+        - ''
+    - Fn::Not:
+      - Fn::Equals:
+        - Ref: SubnetIds
+        - ''
+  HasArtifacts:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: S3Bucket
+      - ''
+Resources:
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type:
+          Fn::If:
+          - HasArtifacts
+          - S3
+          - NO_ARTIFACTS
+        EncryptionDisabled:
+          Fn::If:
+          - HasArtifacts
+          - true
+          - Ref: AWS::NoValue
+        Location:
+          Fn::If:
+          - HasArtifacts
+          - Ref: S3Bucket
+          - Ref: AWS::NoValue
+        Name:
+          Fn::If:
+          - HasArtifacts
+          - /
+          - Ref: AWS::NoValue
+        NamespaceType:
+          Fn::If:
+          - HasArtifacts
+          - NONE
+          - Ref: AWS::NoValue
+        Packaging:
+          Fn::If:
+          - HasArtifacts
+          - NONE
+          - Ref: AWS::NoValue
+      BadgeEnabled: true
+      Cache:
+        Type: NO_CACHE
+      ConcurrentBuildLimit: 1
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+        - Name: PROJECT_NAME
+          Value:
+            Ref: ProjectName
+        - Name: SERVICE_NAME
+          Value:
+            Ref: ComponentName
+        - Name: SERVICE_ENV
+          Value:
+            Ref: Environment
+        - Name: AWS_ACCOUNT_ID
+          Value:
+            Ref: AWS::AccountId
+        Image:
+          Ref: ImageCodeBuild
+        PrivilegedMode: true
+        Type:
+          Ref: TypeContainer
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName:
+            Ref: LogsLogGroup
+      Name:
+        Fn::Sub: ${ProjectName}-${ComponentName}
+      QueuedTimeoutInMinutes: 480
+      ServiceRole:
+        Ref: CodeBuildRole
+      Source:
+        Auth:
+          Type: OAUTH
+        Location:
+          Ref: RepositoryURL
+        Type: GITHUB
+        GitCloneDepth: 1
+      Triggers:
+        Webhook: false
+      VpcConfig:
+        Subnets:
+          Fn::If:
+          - NeedNetworkCfg
+          - Fn::Split:
+            - ','
+            - Ref: SubnetIds
+          - Ref: AWS::NoValue
+        SecurityGroupIds:
+          Fn::If:
+          - NeedNetworkCfg
+          - - Ref: CodeBuildSG
+          - Ref: AWS::NoValue
+        VpcId:
+          Fn::If:
+          - NeedNetworkCfg
+          - Ref: VpcId
+          - Ref: AWS::NoValue
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: ${ProjectName}-${ComponentName}-code-build-svc-role
+      Path: /
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - codebuild.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName:
+          Fn::Sub: ${ProjectName}-${ComponentName}-code-build-svc-role
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Resource: '*'
+            Action:
+            - logs:*
+            - codebuild:*
+            - s3:*
+            - iam:*
+            - cloudformation:*
+            - lambda:*
+            - cloudwatch:*
+            - apigateway:*
+            - ecs:*
+            - ec2:*
+            - elasticloadbalancing:*
+            - route53:*
+            - ecr:*
+            - rds:*
+            - rds-db:*
+            - secretsmanager:*
+            - ssm:*
+            - kms:*
+            - cloudfront:*
+            - wafv2:*
+            - application-autoscaling:*
+            - servicediscovery:*
+  GithubActionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: ${ProjectName}-${ComponentName}-${Environment}-github-actions
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRoleWithWebIdentity
+          Principal:
+            Federated:
+              Fn::Sub: arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+          Condition:
+            StringLike:
+              token.actions.githubusercontent.com:sub:
+                Fn::Sub: repo:${RepositoryURL}:*
+      Policies:
+      - PolicyName: GithubActions
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - codebuild:StartBuild
+            - codebuild:BatchGetBuilds
+            Resource:
+            - Fn::Sub: arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectName}-${Environment}-${ComponentName}
+          - Effect: Allow
+            Action:
+            - logs:GetLogEvents
+            Resource:
+              Fn::Sub: ${LogsLogGroup.Arn}:*
+  CodeBuildSG:
+    Type: AWS::EC2::SecurityGroup
+    Condition: NeedNetworkCfg
+    Properties:
+      GroupDescription:
+        Fn::Sub: ${ProjectName}-${ComponentName}. Security group for CodeBuild.
+      GroupName:
+        Fn::Sub: ${ProjectName}-${ComponentName}-code-build-sg
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${ProjectName}-${ComponentName}-code-build-sg
+      VpcId:
+        Ref: VpcId
+  LogsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub: /aws/codebuild/${ProjectName}-${Environment}-${ComponentName}
+      RetentionInDays: 90
+Outputs:
+  CodeBuildSG:
+    Value:
+      Fn::If:
+      - NeedNetworkCfg
+      - Ref: CodeBuildSG
+      - ''

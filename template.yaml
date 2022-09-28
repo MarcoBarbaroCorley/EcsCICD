@@ -6,7 +6,7 @@ Description: Global infrastructure
 Parameters:
   ProjectName:
     Type: String
-    Default: reverse
+    Default: 5t
     AllowedPattern: "^[a-z0-9\\-]*$"
   Environment:
     Type: String
@@ -15,7 +15,10 @@ Parameters:
     AllowedValues:
       - stag
       - prod
-
+  VpcId:
+    Type: String
+  SubnetIds:
+    Type: String
 
 Resources:
   
@@ -30,7 +33,7 @@ Resources:
         ComponentName: test
         RepositoryURL: "INSERIRE URL" #TODO: Inserire correttamente l'url
         Branches: !Ref Environment  #TODO: In futuro qui basterà mappare gli ambienti per prendere il corretto branch
-        VpcId: !GetAtt Networking.Outputs.VPC
-        SubnetIds: !GetAtt Networking.Outputs.PrivateSubnets
+        VpcId: !Ref VpcId
+        SubnetIds: !Ref SubnetIds
         # DBSGId: !Ref AuroraSG
         TypeContainer: LINUX_CONTAINER
